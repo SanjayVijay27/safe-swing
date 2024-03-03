@@ -16,17 +16,6 @@ class ArduinoCommunication:
             self.unlocked = False
 
     def unlock_door(self):
-        self.board.Servos.detach(9)
-        self.unlocked = True
-
-a = ArduinoCommunication()
-print("locked")
-a.lock_door()
-time.sleep(5)
-print("unlocked")
-a.unlock_door()
-time.sleep(5)
-print("locked")
-a.lock_door()
-time.sleep(5)
-print("end")
+        if not self.unlocked:
+            self.board.Servos.detach(9)
+            self.unlocked = True

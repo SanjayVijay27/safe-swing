@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import cv2
 from time import time
-
+from sort import sort
 
 class ObjectDetection:
     # 
@@ -10,6 +10,7 @@ class ObjectDetection:
         self.model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
         self.classes = self.model.names
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.object_tracker = sort.Sort()
 
     def score_frame(self, frame):
         """
@@ -19,8 +20,11 @@ class ObjectDetection:
         """
         self.model.to(self.device)
         results = self.model([frame])
+        tracked_objects = self.object_tracker.update(results.xyxyn[0].cpu())
         labels, cord = results.xyxyn[0][:, -1].cpu().numpy(), results.xyxyn[0][:, :-1].cpu().numpy()
-        return labels, cord
+        print(labels)
+        print(tracked_objects)
+        return labels, cord, tracked_objects
 
     def class_to_label(self, x):
         """
@@ -30,7 +34,7 @@ class ObjectDetection:
         """
         return self.classes[int(x)]
 
-    def plot_boxes(self, results, frame):
+    def plot_boxes(self, results, frame, track):
         """
         Takes a frame and its results as input, and plots the bounding boxes and label on to the frame.
         :param results: contains labels and coordinates predicted by model on the given frame.
@@ -46,31 +50,18 @@ class ObjectDetection:
                 x1, y1, x2, y2 = int(row[0]*x_shape), int(row[1]*y_shape), int(row[2]*x_shape), int(row[3]*y_shape)
                 bgr = (0, 255, 0)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), bgr, 2)
-                cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.9, bgr, 2)
+                cv2.putText(frame, (self.class_to_label(labels[i]) + ": " + str(round((row[2]-row[0])*(row[3]-row[1]),4))) + ", " + str(track[i][4] if i < len(track) else ''), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.9, bgr, 2)
 
         return frame
 
     def __call__(self, image):
-        """
-        This function is called when class is executed, it runs the loop to read the video frame by frame,
-        and write the output into a new file.
-        :return: void
-        """
-        #player = cv2.VideoCapture(0)
-        #assert player.isOpened()
-        #x_shape = int(player.get(cv2.CAP_PROP_FRAME_WIDTH))
-        #y_shape = int(player.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        #four_cc = cv2.VideoWriter_fourcc(*"MJPG")
-        #out = cv2.VideoWriter(self.out_file, four_cc, 20, (x_shape, y_shape))
-        '''while True:
-            start_time = time()
-            ret, frame = player.read()
-            assert ret
-            results = self.score_frame(frame)
-            frame = self.plot_boxes(results, frame)
-            end_time = time()
-            fps = 1/np.round(end_time - start_time, 3)
-            print(f"Frames Per Second : {fps}")
-            out.write(frame)'''
-        objects, locations = self.score_frame(image)
-        return((objects, locations), self.plot_boxes((objects, locations), image))
+        objects, locations, tracked_objects = self.score_frame(image)
+        output_data = []
+        for i in range(len(objects)):
+            d = {'name': self.classes[objects[i]], 'x1': locations[i][0], 'y1': locations[i][1], 'x2': locations[i][2], 'y2':locations[i][3], 'certainty':locations[i][4]}
+            d['area'] = (d["x2"] - d["x1"]) * (d["y2"] - d["y1"])
+            if i < len(tracked_objects):
+                d['id'] = tracked_objects[i][4]
+            output_data.append(d)
+            
+        return(output_data, self.plot_boxes((objects, locations), image, tracked_objects))
